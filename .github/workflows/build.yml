@@ -13,53 +13,31 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download and setup EWDK
-        run: |
-          Write-Host "=== Downloading Enterprise WDK ==="
-          $ewdkUrl = "https://go.microsoft.com/fwlink/?linkid=2286070"
-          $ewdkIso = "$env:TEMP\ewdk.iso"
-          Invoke-WebRequest -Uri $ewdkUrl -OutFile $ewdkIso -UseBasicParsing
-          Write-Host "Download complete."
-          $mount = Mount-DiskImage -ImagePath $ewdkIso -PassThru
-          $driveLetter = ($mount | Get-Volume).DriveLetter
-          Write-Host "Mounted at: ${driveLetter}:"
-          $ewdkRoot = "${driveLetter}:\Program Files\Windows Kits\10"
-          echo "EWDK_ROOT=$ewdkRoot" >> $env:GITHUB_ENV
-          echo "EWDK_DRIVE=${driveLetter}:" >> $env:GITHUB_ENV
+      - name: Install NuGet CLI
+        run: Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile "nuget.exe"
         shell: pwsh
 
-      - name: Find build tools
-        id: tools
+      - name: Restore WDK NuGet package
+        run: .\nuget.exe install Microsoft.Windows.WDK.x64 -OutputDirectory packages -NonInteractive -Version 10.0.26100.1
+        shell: pwsh
+
+      - name: Restore SDK NuGet package
+        run: .\nuget.exe install Microsoft.Windows.SDK.CPP.x64 -OutputDirectory packages -NonInteractive -Version 10.0.26100.1
+        shell: pwsh
+
+      - name: Find MSBuild
+        id: find-msbuild
         run: |
-          $ewdkDrive = $env:EWDK_DRIVE
-          $clPath = Get-ChildItem -Path $ewdkDrive -Recurse -Filter "cl.exe" -ErrorAction SilentlyContinue |
-                    Where-Object { $_.FullName -match "x64" } | Select-Object -First 1
-          $linkPath = Get-ChildItem -Path $ewdkDrive -Recurse -Filter "link.exe" -ErrorAction SilentlyContinue |
-                      Where-Object { $_.FullName -match "x64" } | Select-Object -First 1
-          Write-Host "cl: $($clPath.FullName)"
-          Write-Host "link: $($linkPath.FullName)"
-          echo "cl_path=$($clPath.FullName)" >> $env:GITHUB_OUTPUT
-          echo "link_path=$($linkPath.FullName)" >> $env:GITHUB_OUTPUT
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $msbuildPath = & $vsWhere -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+          "msbuild=$msbuildPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
         shell: pwsh
 
       - name: Build Driver
         run: |
-          $cl = "${{ steps.tools.outputs.cl_path }}"
-          $link = "${{ steps.tools.outputs.link_path }}"
-          $ewdkRoot = $env:EWDK_ROOT
-          $sdkVersions = Get-ChildItem "$ewdkRoot\Include" -Directory | Sort-Object Name -Descending
-          $sdkVer = ($sdkVersions | Select-Object -First 1).Name
-          Write-Host "SDK: $sdkVer"
-
-          & $cl /nologo /W3 /GS- /D NTDDI_VERSION=0x0A000000 /D _WIN64 /D _AMD64_ /D _NDEBUG /D _KERNEL_MODE `
-            /I"$ewdkRoot\Include\$sdkVer\km" /I"$ewdkRoot\Include\$sdkVer\shared" /I"$ewdkRoot\Include\$sdkVer\ucrt" `
-            /kernel /Zi /Od /c /Fo:msr_drv.obj msr_drv.c
+          $msbuild = "${{ steps.find-msbuild.outputs.msbuild }}"
+          & $msbuild msr_drv.vcxproj /p:Configuration=Release /p:Platform=x64 /t:Build /m /v:normal
           if ($LASTEXITCODE -ne 0) { exit 1 }
-
-          $libPath = "$ewdkRoot\lib\$sdkVer\km\x64"
-          & $link /nologo /DEBUG /DRIVER /ENTRY:DriverEntry /OUT:msr_drv.sys /SUBSYSTEM:NATIVE /MACHINE:X64 /LIBPATH:$libPath msr_drv.obj ntoskrnl.lib hal.lib
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          Write-Host "Build OK: $((Get-Item msr_drv.sys).Length) bytes"
         shell: pwsh
 
       - name: Upload artifact
@@ -70,3 +48,4 @@ jobs:
             msr_drv.sys
             msr_drv.inf
             msr_client.py
+          if-no-files-found: warn
