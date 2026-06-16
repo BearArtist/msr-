@@ -1,0 +1,25 @@
+# Build output
+bin/
+x64/
+Debug/
+Release/
+*.obj
+*.pdb
+*.log
+*.tlog
+*.lastbuildstate
+*.idb
+*.exp
+*.lib
+
+# VS
+.vs/
+*.suo
+*.user
+*.sln
+*.vcxproj.filters
+*.vcxproj.user
+
+# OS
+Thumbs.db
+.DS_Store

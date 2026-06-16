@@ -1,0 +1,54 @@
+; msr_drv.inf - MSR Driver Installation File
+; 适用于 Intel Sandy Bridge 倍频调整
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = System
+ClassGuid   = {4d36e97d-e325-11ce-bfc1-08002be10318}
+Provider    = %ManufacturerName%
+DriverVer   = 06/16/2026,1.0.0.0
+CatalogFile = msr_drv.cat
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 12    ; %windir%\system32\drivers
+
+[DefaultInstall.NTamd64]
+CopyFiles = CopyDriverFiles
+
+[DefaultInstall.NTamd64.Services]
+AddService = MsrDrv,,ServiceInstall
+
+[CopyDriverFiles]
+msr_drv.sys
+
+[ServiceInstall]
+DisplayName   = %ServiceDescription%
+ServiceType   = 1              ; SERVICE_KERNEL_DRIVER
+StartType     = 3              ; SERVICE_DEMAND_START (手动启动)
+ErrorControl  = 1              ; SERVICE_ERROR_NORMAL
+ServiceBinary = %12%\msr_drv.sys
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles.amd64]
+msr_drv.sys = 1,,
+
+[Manufacturer]
+%ManufacturerName% = Standard,NTamd64
+
+[Standard.NTamd64]
+%DeviceName% = MsrDrv_Install, Root\MsrDrv
+
+[MsrDrv_Install.NT]
+CopyFiles = CopyDriverFiles
+
+[MsrDrv_Install.NT.Services]
+AddService = MsrDrv,,ServiceInstall
+
+[Strings]
+ManufacturerName  = "MSR Driver"
+ServiceDescription = "MSR Read/Write Driver for Intel Sandy Bridge"
+DeviceName        = "MSR Driver Device"
+DiskName          = "MSR Driver Disk"
