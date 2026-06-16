@@ -1,0 +1,47 @@
+name: Build MSR Driver
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Windows Driver Kit (WDK)
+        run: |
+          Write-Host "Downloading WDK installer..."
+          $wdkUrl = "https://go.microsoft.com/fwlink/?linkid=2286068"
+          $wdkInstaller = "$env:TEMP\wdk_installer.exe"
+          Invoke-WebRequest -Uri $wdkUrl -OutFile $wdkInstaller
+          Write-Host "Installing WDK (silent)..."
+          Start-Process -FilePath $wdkInstaller -ArgumentList "/quiet", "/norestart" -Wait
+          Write-Host "WDK installed."
+
+      - name: Find MSBuild
+        id: find-msbuild
+        run: |
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $msbuildPath = & $vsWhere -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+          Write-Host "MSBuild: $msbuildPath"
+          Write-Host "msbuild=$msbuildPath" >> $env:GITHUB_OUTPUT
+
+      - name: Build Driver (x64 Release)
+        run: |
+          $msbuild = "${{ steps.find-msbuild.outputs.msbuild }}"
+          & $msbuild msr_drv.vcxproj /p:Configuration=Release /p:Platform=x64 /t:Build /m
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Upload driver artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: msr-driver-x64
+          path: |
+            **/*.sys
+            **/*.inf
+          if-no-files-found: warn
